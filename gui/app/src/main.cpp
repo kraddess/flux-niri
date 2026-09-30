@@ -1,11 +1,17 @@
 // flux-gui is the Qt6 window of Flux. It shows the same QML views as the
 // Omarchy shell plugin and talks to fluxd over its IPC socket.
 
+#include <QApplication>
 #include <QCommandLineParser>
 #include <QDir>
 #include <QGuiApplication>
 #include <QIcon>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QMenu>
 #include <QProcess>
+#include <QSystemTrayIcon>
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QQuickWindow>
@@ -41,8 +47,32 @@ FluxBackend *expose(QQmlApplicationEngine &engine)
     return backend;
 }
 
+// focusNiri asks niri to focus the window of this process. niri has no
+// rule by app id, so it looks up the window id by the process id.
+bool focusNiri()
+{
+    if (qEnvironmentVariableIsEmpty("NIRI_SOCKET"))
+        return false;
+    QProcess list;
+    list.start(QStringLiteral("niri"), {QStringLiteral("msg"), QStringLiteral("-j"), QStringLiteral("windows")});
+    if (!list.waitForFinished(1000))
+        return false;
+    const qint64 pid = QCoreApplication::applicationPid();
+    for (const QJsonValue &w : QJsonDocument::fromJson(list.readAllStandardOutput()).array()) {
+        const QJsonObject o = w.toObject();
+        if (o.value(QStringLiteral("pid")).toInteger() == pid) {
+            QProcess::startDetached(QStringLiteral("niri"),
+                                    {QStringLiteral("msg"), QStringLiteral("action"), QStringLiteral("focus-window"),
+                                     QStringLiteral("--id"), QString::number(o.value(QStringLiteral("id")).toInteger())});
+            return true;
+        }
+    }
+    return false;
+}
+
 // raise brings the window to the front. Wayland lets a window take focus
-// only with an activation token. Without a token, flux-gui asks Hyprland.
+// only with an activation token. Without a token, flux-gui asks niri or
+// Hyprland.
 void raise(QQuickWindow *window, const QString &token)
 {
     window->show();
@@ -52,8 +82,49 @@ void raise(QQuickWindow *window, const QString &token)
         window->requestActivate();
         return;
     }
+    // A window that has just been shown gets its niri id a moment later.
+    if (!qEnvironmentVariableIsEmpty("NIRI_SOCKET")) {
+        QTimer::singleShot(150, window, [] { focusNiri(); });
+        return;
+    }
     QProcess::startDetached(QStringLiteral("hyprctl"),
                             {QStringLiteral("dispatch"), QStringLiteral("focuswindow"), QStringLiteral("class:^flux$")});
+}
+
+// addTray puts the Flux icon into the system tray. A click opens the
+// window. Closing the window then hides it, and flux-gui keeps running in
+// the tray. Quit Flux turns fluxd off and ends flux-gui.
+void addTray(QApplication &app, QQuickWindow *window, FluxBackend *backend)
+{
+    if (!QSystemTrayIcon::isSystemTrayAvailable())
+        return;
+    app.setQuitOnLastWindowClosed(false);
+    auto *tray = new QSystemTrayIcon(QGuiApplication::windowIcon(), &app);
+    tray->setToolTip(QStringLiteral("Flux"));
+    auto *menu = new QMenu();
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, menu, &QObject::deleteLater);
+    auto open = [window, backend] {
+        backend->retryNow();
+        raise(window, QString());
+    };
+    menu->addAction(QStringLiteral("Open Flux"), open);
+    QAction *start = menu->addAction(QStringLiteral("Start Flux"), [] {
+        QProcess::startDetached(QStringLiteral("flux-cli"), {QStringLiteral("on")});
+    });
+    auto update = [start, backend] { start->setVisible(!backend->connected()); };
+    QObject::connect(backend, &FluxBackend::connectedChanged, start, update);
+    update();
+    menu->addSeparator();
+    menu->addAction(QStringLiteral("Quit Flux"), &app, [&app] {
+        QProcess::execute(QStringLiteral("flux-cli"), {QStringLiteral("off")});
+        app.quit();
+    });
+    tray->setContextMenu(menu);
+    QObject::connect(tray, &QSystemTrayIcon::activated, window, [open](QSystemTrayIcon::ActivationReason r) {
+        if (r == QSystemTrayIcon::Trigger || r == QSystemTrayIcon::DoubleClick)
+            open();
+    });
+    tray->show();
 }
 
 // snapshot renders every screen of the shared views with the mock backend
@@ -107,7 +178,7 @@ int main(int argc, char *argv[])
     }
 
     QGuiApplication::setDesktopFileName(QStringLiteral("flux"));
-    QGuiApplication app(argc, argv);
+    QApplication app(argc, argv);
     QGuiApplication::setApplicationName(QStringLiteral("flux"));
     // The icon theme gives the icon through flux.desktop. The embedded icon
     // is for a system with no installed flux icon.
@@ -122,6 +193,8 @@ int main(int argc, char *argv[])
     parser.addOption({QStringLiteral("snapshot"),
                       QStringLiteral("Render every screen with test data into PNG files in <dir>, then quit."),
                       QStringLiteral("dir")});
+    parser.addOption({QStringLiteral("hidden"),
+                      QStringLiteral("Start in the system tray without showing the window.")});
     parser.addPositionalArgument(QStringLiteral("page"),
                                  QStringLiteral("The page to open: overview, clipboard, files, notifications, "
                                                 "messages, or commands. With --snapshot: the screens to render."),
@@ -138,6 +211,7 @@ int main(int argc, char *argv[])
     QQmlApplicationEngine engine;
     FluxBackend *backend = expose(engine);
     engine.rootContext()->setContextProperty(QStringLiteral("fluxInitialPage"), page);
+    engine.rootContext()->setContextProperty(QStringLiteral("fluxStartHidden"), parser.isSet(QStringLiteral("hidden")));
     // An update replaces flux-gui and restarts fluxd. The window then
     // offers a restart into the new version.
     auto *self = new SelfWatch(&engine);
@@ -159,6 +233,7 @@ int main(int argc, char *argv[])
             QMetaObject::invokeMethod(window, "showPage", Q_ARG(QVariant, page));
         raise(window, token);
     });
+    addTray(app, window, backend);
     if (const QString grab = qEnvironmentVariable("FLUX_GUI_GRAB"); !grab.isEmpty())
         grabAfterState(window, backend, grab);
     return app.exec();

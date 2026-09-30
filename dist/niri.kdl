@@ -1,7 +1,10 @@
-// Flux shortcut for niri. The Flux windows tile like any app window.
-// Paste it into your niri config, for example ~/.config/niri/config.d/90-user-extra.kdl. A file
+// Flux tray icon and shortcut for niri. The Flux windows tile like any app
+// window. Paste them into your niri config, for example ~/.config/niri/config.d/90-user-extra.kdl. A file
 // takes 1 binds node, so put the bind into a binds node that it has.
 
 binds {
     Mod+Alt+F hotkey-overlay-title="Flux" { spawn "flux-cli" "open"; }
 }
+
+// Start the Flux tray icon at login. Closing the window keeps it in the tray.
+spawn-at-startup "flux-gui" "--hidden"

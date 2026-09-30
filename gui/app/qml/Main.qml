@@ -11,7 +11,8 @@ Window {
   // drawer below 680 px.
   minimumWidth: 360
   minimumHeight: 480
-  visible: true
+  // flux-gui --hidden starts in the system tray.
+  visible: !fluxStartHidden
   color: fluxTheme.background
 
   // showPage selects a screen by its key, for example "files".
