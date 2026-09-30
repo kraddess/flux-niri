@@ -87,3 +87,48 @@ func TestRunShortcutRefusesAnInvalidReference(t *testing.T) {
 		}
 	}
 }
+
+func TestNiriAction(t *testing.T) {
+	cases := []struct {
+		b    shortcutBody
+		want string
+	}{
+		{shortcutBody{Action: "close"}, "close-window"},
+		{shortcutBody{Action: "workspace", Workspace: 3}, "focus-workspace 3"},
+		{shortcutBody{Action: "moveToWorkspace", Workspace: 10}, "move-window-to-workspace 10"},
+		{shortcutBody{Action: "focus", Direction: "u"}, "focus-window-up"},
+		{shortcutBody{Action: "swap", Direction: "l"}, "move-column-left"},
+	}
+	for _, c := range cases {
+		got, err := niriAction(c.b)
+		if err != nil || strings.Join(got, " ") != c.want {
+			t.Errorf("%+v: got %v, %v, want %q", c.b, got, err, c.want)
+		}
+	}
+	for _, b := range []shortcutBody{
+		{Action: "workspace", Workspace: 0},
+		{Action: "workspace", Workspace: 11},
+		{Action: "focus", Direction: "x"},
+		{Action: "scratchpad"},
+		{Action: "rm -rf"},
+	} {
+		if _, err := niriAction(b); err == nil {
+			t.Errorf("%+v: want an error", b)
+		}
+	}
+}
+
+func TestParseNiriWorkspaces(t *testing.T) {
+	ws := `[{"id":5,"idx":2,"output":"eDP-1","is_focused":true},
+		{"id":4,"idx":1,"output":"eDP-1","is_focused":false},
+		{"id":9,"idx":1,"output":"HDMI-A-1","is_focused":false}]`
+	wins := `[{"workspace_id":5},{"workspace_id":5},{"workspace_id":9},{"workspace_id":null}]`
+	got, active, err := parseNiriWorkspaces([]byte(ws), []byte(wins))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Workspace{{ID: 1, Windows: 0}, {ID: 2, Windows: 2}}
+	if active != 2 || len(got) != 2 || got[0] != want[0] || got[1] != want[1] {
+		t.Errorf("got %v, active %d, want %v, active 2", got, active, want)
+	}
+}

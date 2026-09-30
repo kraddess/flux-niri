@@ -24,6 +24,23 @@ func TestParseOmarchyDND(t *testing.T) {
 	}
 }
 
+func TestParseInirDND(t *testing.T) {
+	cases := map[string]bool{
+		`{"notifications": {"silent": true, "timeout": 7000}}`: true,
+		`{"notifications": {"silent": false}}`:                 false,
+		`{"bar": {}}`:                                          false,
+	}
+	for in, want := range cases {
+		got, err := parseInirDND([]byte(in))
+		if err != nil || got != want {
+			t.Errorf("%s: got %v, %v, want %v", in, got, err, want)
+		}
+	}
+	if _, err := parseInirDND([]byte(`{"notifications": {"sil`)); err == nil {
+		t.Error("a partial file must fail, so that the next poll reads it again")
+	}
+}
+
 func TestDNDStateFile(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "notifications.json")
 	d := &DND{kind: "omarchy-shell", statePath: path}

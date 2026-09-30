@@ -55,6 +55,9 @@ func update(args []string, device string) error {
 		return err
 	}
 	pkg := pacmanOwner(exe)
+	if pkg == forkPackage {
+		return forkUpdate()
+	}
 	if pkg == "" {
 		return sourceUpdate()
 	}
@@ -127,6 +130,16 @@ func packageAsset(r release.Release, pkg, arch string) (release.Asset, bool) {
 	return r.Find(func(n string) bool {
 		return strings.HasPrefix(n, pkg+"-"+r.Version()+"-") && strings.HasSuffix(n, "-"+arch+".pkg.tar.zst")
 	})
+}
+
+// forkPackage is the package of the niri fork. The releases carry only
+// omarchy-flux, so the fork updates from its checkout.
+const forkPackage = "flux-niri"
+
+// forkUpdate prints the commands that rebase the fork on the upstream
+// release and build its package again.
+func forkUpdate() error {
+	return errors.New("this Flux is the flux-niri fork, so update it from the checkout:\n  git fetch upstream && git rebase upstream/main && cd dist/arch && makepkg -si")
 }
 
 // sourceUpdate prints the commands for a source install.

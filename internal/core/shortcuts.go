@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -223,6 +226,9 @@ func (d *Daemon) runShortcut(b shortcutBody) error {
 		if !luaRef.MatchString(b.Run) {
 			return fmt.Errorf("the shortcut %q is not valid", b.Run)
 		}
+		if onNiri() {
+			return errors.New("niri cannot list or run its key bindings over IPC")
+		}
 		data, err := hyprctl(ctx, "-j", "binds")
 		if err != nil {
 			return err
@@ -240,6 +246,12 @@ func (d *Daemon) runShortcut(b shortcutBody) error {
 		}
 		_, err = hyprctl(ctx, "eval", "debug.getregistry()["+b.Run+"]()")
 		return err
+	case b.Action != "" && onNiri():
+		args, err := niriAction(b)
+		if err != nil {
+			return err
+		}
+		return niriMsg(ctx, append([]string{"action"}, args...)...)
 	case b.Action != "":
 		lua, err := actionLua(b)
 		if err != nil {
@@ -255,6 +267,9 @@ func (d *Daemon) runShortcut(b shortcutBody) error {
 // list, it also returns the shortcuts.
 func (d *Daemon) shortcutState(list bool) (map[string]any, error) {
 	ctx := d.ctx
+	if onNiri() {
+		return niriShortcutState(ctx, list)
+	}
 	body := map[string]any{}
 	if list {
 		data, err := hyprctl(ctx, "-j", "binds")
@@ -288,4 +303,133 @@ func (d *Daemon) shortcutState(list bool) (map[string]any, error) {
 	}
 	body["active"] = active.ID
 	return body, nil
+}
+
+// onNiri reports whether fluxd runs in a niri session. niri sets
+// NIRI_SOCKET and imports it into the user services.
+func onNiri() bool {
+	return os.Getenv("NIRI_SOCKET") != "" && os.Getenv("HYPRLAND_INSTANCE_SIGNATURE") == ""
+}
+
+// niriMsg runs niri msg with args and returns its error output on a failure.
+func niriMsg(ctx context.Context, args ...string) error {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if out, err := exec.CommandContext(ctx, "niri", append([]string{"msg"}, args...)...).CombinedOutput(); err != nil {
+		return fmt.Errorf("niri msg %s: %w: %s", args[0], err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+// niriFixedActions are the niri actions that match the fixed actions of
+// the phone. niri has no scratchpad and no split toggle, so "split" toggles
+// the tabbed display of the column.
+var niriFixedActions = map[string]string{
+	"close":             "close-window",
+	"fullscreen":        "fullscreen-window",
+	"float":             "toggle-window-floating",
+	"split":             "toggle-column-tabbed-display",
+	"nextWindow":        "focus-column-right-or-first",
+	"nextWorkspace":     "focus-workspace-down",
+	"previousWorkspace": "focus-workspace-up",
+}
+
+var niriFocus = map[string]string{"l": "focus-column-left", "r": "focus-column-right", "u": "focus-window-up", "d": "focus-window-down"}
+var niriSwap = map[string]string{"l": "move-column-left", "r": "move-column-right", "u": "move-window-up", "d": "move-window-down"}
+
+// niriAction returns the arguments of niri msg action for an action from
+// the phone. The values come from fixed text and checked numbers.
+func niriAction(b shortcutBody) ([]string, error) {
+	if a, ok := niriFixedActions[b.Action]; ok {
+		return []string{a}, nil
+	}
+	switch b.Action {
+	case "workspace", "moveToWorkspace":
+		if b.Workspace < 1 || b.Workspace > maxWorkspace {
+			return nil, fmt.Errorf("workspace %d is not from 1 to %d", b.Workspace, maxWorkspace)
+		}
+		a := "focus-workspace"
+		if b.Action == "moveToWorkspace" {
+			a = "move-window-to-workspace"
+		}
+		return []string{a, strconv.Itoa(b.Workspace)}, nil
+	case "focus", "swap":
+		m := niriFocus
+		if b.Action == "swap" {
+			m = niriSwap
+		}
+		if a, ok := m[b.Direction]; ok {
+			return []string{a}, nil
+		}
+		return nil, fmt.Errorf("the direction %q is not l, r, u, or d", b.Direction)
+	case "scratchpad":
+		return nil, errors.New("niri has no scratchpad")
+	}
+	return nil, fmt.Errorf("the action %q is not known", b.Action)
+}
+
+// niriShortcutState returns the workspaces of the focused output, numbered
+// by their index as niri focus-workspace takes it, and the focused one.
+// niri cannot list its key bindings, so the list of shortcuts is empty.
+func niriShortcutState(ctx context.Context, list bool) (map[string]any, error) {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	ws, err := exec.CommandContext(ctx, "niri", "msg", "-j", "workspaces").Output()
+	if err != nil {
+		return nil, fmt.Errorf("niri msg workspaces: %w", err)
+	}
+	wins, err := exec.CommandContext(ctx, "niri", "msg", "-j", "windows").Output()
+	if err != nil {
+		return nil, fmt.Errorf("niri msg windows: %w", err)
+	}
+	workspaces, active, err := parseNiriWorkspaces(ws, wins)
+	if err != nil {
+		return nil, err
+	}
+	body := map[string]any{"workspaces": workspaces, "active": active}
+	if list {
+		body["shortcuts"] = []Shortcut{}
+	}
+	return body, nil
+}
+
+// parseNiriWorkspaces reads niri msg -j workspaces and windows. It returns
+// the workspaces of the focused output with their window counts, and the
+// index of the focused workspace.
+func parseNiriWorkspaces(wsData, winData []byte) ([]Workspace, int, error) {
+	var all []struct {
+		ID        uint64 `json:"id"`
+		Idx       int    `json:"idx"`
+		Output    string `json:"output"`
+		IsFocused bool   `json:"is_focused"`
+	}
+	if err := json.Unmarshal(wsData, &all); err != nil {
+		return nil, 0, fmt.Errorf("read the niri workspaces: %w", err)
+	}
+	var wins []struct {
+		WorkspaceID *uint64 `json:"workspace_id"`
+	}
+	if err := json.Unmarshal(winData, &wins); err != nil {
+		return nil, 0, fmt.Errorf("read the niri windows: %w", err)
+	}
+	count := map[uint64]int{}
+	for _, w := range wins {
+		if w.WorkspaceID != nil {
+			count[*w.WorkspaceID]++
+		}
+	}
+	output, active := "", 0
+	for _, w := range all {
+		if w.IsFocused {
+			output, active = w.Output, w.Idx
+		}
+	}
+	out := []Workspace{}
+	for _, w := range all {
+		if w.Output == output && w.Idx > 0 {
+			out = append(out, Workspace{ID: w.Idx, Windows: count[w.ID]})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out, active, nil
 }

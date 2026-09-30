@@ -17,10 +17,12 @@ import (
 const makoMode = "do-not-disturb"
 
 // DND reads and sets Do Not Disturb of the desktop notification service.
-// It supports the notification service of the Omarchy shell, and mako.
+// It supports the notification service of the Omarchy shell, the iNiR
+// shell, and mako.
 type DND struct {
 	kind      string
 	statePath string
+	inirPath  string
 
 	// The state file of the Omarchy shell changes only when Do Not Disturb
 	// changes. Get reads the file again only when its time or size changes.
@@ -35,10 +37,17 @@ type DND struct {
 // empty string when Flux supports none of the services on this desktop.
 func NewDND() *DND {
 	home, _ := os.UserHomeDir()
-	d := &DND{statePath: filepath.Join(home, ".local", "state", "omarchy", "notifications.json")}
+	d := &DND{
+		statePath: filepath.Join(home, ".local", "state", "omarchy", "notifications.json"),
+		inirPath:  filepath.Join(home, ".config", "quickshell", "inir"),
+	}
 	switch {
 	case onPath("omarchy-shell"):
 		d.kind = "omarchy-shell"
+	case onPath("qs") && fileExists(filepath.Join(d.inirPath, "shell.qml")):
+		// iNiR keeps Do Not Disturb as notifications.silent in its config.
+		d.kind = "inir"
+		d.statePath = filepath.Join(home, ".config", "inir", "config.json")
 	case onPath("makoctl"):
 		d.kind = "mako"
 	}
@@ -50,7 +59,12 @@ func onPath(name string) bool {
 	return err == nil
 }
 
-// Kind returns "omarchy-shell", "mako", or an empty string.
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// Kind returns "omarchy-shell", "inir", "mako", or an empty string.
 func (d *DND) Kind() string { return d.kind }
 
 // Get returns the Do Not Disturb state. ok is false when the service does
@@ -58,7 +72,9 @@ func (d *DND) Kind() string { return d.kind }
 func (d *DND) Get() (on, ok bool) {
 	switch d.kind {
 	case "omarchy-shell":
-		return d.getOmarchy()
+		return d.getState(parseOmarchyDND)
+	case "inir":
+		return d.getState(parseInirDND)
 	case "mako":
 		out, err := exec.Command("makoctl", "mode").Output()
 		if err != nil {
@@ -69,9 +85,10 @@ func (d *DND) Get() (on, ok bool) {
 	return false, false
 }
 
-// getOmarchy reads the state file of the Omarchy shell. The shell writes
-// the file atomically 200 ms after a change.
-func (d *DND) getOmarchy() (on, ok bool) {
+// getState reads the state file of the shell with parse. The Omarchy shell
+// writes its file atomically 200 ms after a change, and iNiR writes its
+// config about 300 ms after a change.
+func (d *DND) getState(parse func([]byte) (bool, error)) (on, ok bool) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	st, err := os.Stat(d.statePath)
@@ -90,7 +107,7 @@ func (d *DND) getOmarchy() (on, ok bool) {
 	if err != nil {
 		return false, false
 	}
-	on, err = parseOmarchyDND(b)
+	on, err = parse(b)
 	if err != nil {
 		return false, false
 	}
@@ -112,6 +129,16 @@ func (d *DND) Set(on bool) error {
 		// The bar shows the state. omarchy-toggle-notification-silencing
 		// refreshes it the same way.
 		_ = exec.Command("omarchy-shell", "-q", "omarchy.indicators", "refresh").Run()
+		return nil
+	case "inir":
+		// iNiR offers only a toggle over IPC, so toggle when the state
+		// differs.
+		if cur, ok := d.Get(); ok && cur == on {
+			return nil
+		}
+		if out, err := exec.Command("qs", "-p", d.inirPath, "ipc", "call", "notifications", "toggleSilent").CombinedOutput(); err != nil {
+			return fmt.Errorf("qs: %w: %s", err, strings.TrimSpace(string(out)))
+		}
 		return nil
 	case "mako":
 		flag := "-r"
@@ -136,6 +163,20 @@ func parseOmarchyDND(b []byte) (bool, error) {
 		return false, err
 	}
 	return s.DND != nil && *s.DND, nil
+}
+
+// parseInirDND reads notifications.silent of the iNiR config. A config
+// with no key means off.
+func parseInirDND(b []byte) (bool, error) {
+	var s struct {
+		Notifications struct {
+			Silent bool `json:"silent"`
+		} `json:"notifications"`
+	}
+	if err := json.Unmarshal(b, &s); err != nil {
+		return false, err
+	}
+	return s.Notifications.Silent, nil
 }
 
 // makoDND reports whether the output of `makoctl mode` has the Do Not

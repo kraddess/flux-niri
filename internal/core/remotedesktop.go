@@ -291,22 +291,35 @@ func wakeMonitors(ctx context.Context, list func() ([]monitor, error), wake func
 
 // wakeDisplays turns on each display that is off. A Hyprland with a Lua
 // configuration takes a Lua dispatcher. An older Hyprland takes "dpms on".
+// niri takes the power-on-monitors action.
 func wakeDisplays(ctx context.Context) error {
 	if _, err := hyprctl(ctx, "dispatch", `hl.dsp.dpms({ action = "enable" })`); err == nil {
 		return nil
 	}
-	_, err := hyprctl(ctx, "dispatch", "dpms", "on")
-	return err
+	if _, err := hyprctl(ctx, "dispatch", "dpms", "on"); err == nil {
+		return nil
+	}
+	return exec.CommandContext(ctx, "niri", "msg", "action", "power-on-monitors").Run()
 }
 
-// focusedMonitor returns the monitor with the focus in Hyprland, or an
-// empty string when hyprctl does not answer.
+// focusedMonitor returns the monitor with the focus in Hyprland or niri, or
+// an empty string when neither answers.
 func focusedMonitor(ctx context.Context) string {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
 	out, err := exec.CommandContext(ctx, "hyprctl", "monitors", "-j").Output()
 	if err != nil {
-		return ""
+		out, err = exec.CommandContext(ctx, "niri", "msg", "-j", "focused-output").Output()
+		if err != nil {
+			return ""
+		}
+		var m struct {
+			Name string `json:"name"`
+		}
+		if json.Unmarshal(out, &m) != nil {
+			return ""
+		}
+		return m.Name
 	}
 	var ms []struct {
 		Name    string `json:"name"`

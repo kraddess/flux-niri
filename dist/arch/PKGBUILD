@@ -1,10 +1,13 @@
 # Build from this checkout with: makepkg -si
 # scripts/prepare-aur.py sets the release source fields for AUR builds.
 
-pkgname=omarchy-flux
+# This fork builds flux-niri for niri and iNiR. It replaces omarchy-flux.
+pkgname=flux-niri
 pkgver=0.1.0
 pkgrel=1
-pkgdesc='Connect an Omarchy computer to your phone with Flux for Android'
+pkgdesc='Connect a niri computer to your phone with Flux for Android'
+provides=('omarchy-flux')
+conflicts=('omarchy-flux')
 arch=('x86_64' 'aarch64')
 url='https://omarchy.org'
 # The repository has no license yet.
