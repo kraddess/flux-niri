@@ -8,3 +8,12 @@ Icon=flux
 Terminal=false
 Categories=Network;Utility;
 Keywords=phone;android;clipboard;share;sms;
+Actions=quit;start;
+
+[Desktop Action quit]
+Name=Quit Flux
+Exec=sh -c "flux-cli off; pkill -x flux-gui"
+
+[Desktop Action start]
+Name=Start Flux
+Exec=flux-cli on
