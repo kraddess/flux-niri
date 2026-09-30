@@ -10,7 +10,7 @@
 | Do Not Disturb sync | Syncs with iNiR's `notifications.silent`. It reads `~/.config/inir/config.json` and toggles the setting over `qs ipc`. |
 | Remote desktop | Streams the niri output that has focus, and wakes the displays with `niri msg action power-on-monitors`. |
 | Phone shortcuts panel | Lists the workspaces of the focused output, and runs the fixed actions (close, fullscreen, float, workspaces, focus, move) through `niri msg action`. niri cannot list its key bindings over IPC, so the binding list stays empty. niri has no scratchpad. |
-| Window rules and shortcut | [`dist/niri.kdl`](dist/niri.kdl) floats the phone screen mirror and binds `Mod+Alt+F` to `flux-cli open`. |
+| Window rules and shortcut | [`dist/niri.kdl`](dist/niri.kdl) binds `Mod+Alt+F` to `flux-cli open`. |
 | Package | Builds `flux-niri`, which replaces `omarchy-flux`. `flux-cli update` prints the commands that rebuild the fork, so it never installs the upstream package over the fork. |
 
 Hyprland and Omarchy keep working as upstream.

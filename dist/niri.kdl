@@ -1,12 +1,6 @@
-// Flux window rule and shortcut for niri. The Flux window tiles like any
-// app window; only the phone screen mirror floats. Paste them into your niri
-// config, for example ~/.config/niri/config.d/90-user-extra.kdl. A file
+// Flux shortcut for niri. The Flux windows tile like any app window.
+// Paste it into your niri config, for example ~/.config/niri/config.d/90-user-extra.kdl. A file
 // takes 1 binds node, so put the bind into a binds node that it has.
-
-window-rule {
-    match app-id="^flux-screen$"
-    open-floating true
-}
 
 binds {
     Mod+Alt+F hotkey-overlay-title="Flux" { spawn "flux-cli" "open"; }
