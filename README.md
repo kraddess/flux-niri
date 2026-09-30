@@ -1,5 +1,52 @@
 # Flux
 
+> **flux-niri** is a fork of [bjarneo/flux](https://github.com/bjarneo/flux) for Arch Linux with the [niri](https://github.com/YaLTeR/niri) compositor and the iNiR Quickshell shell.
+> The rest of this README is the upstream README.
+
+## What the fork changes
+
+| Area | On niri |
+| --- | --- |
+| Do Not Disturb sync | Syncs with iNiR's `notifications.silent`. It reads `~/.config/inir/config.json` and toggles the setting over `qs ipc`. |
+| Remote desktop | Streams the niri output that has focus, and wakes the displays with `niri msg action power-on-monitors`. |
+| Phone shortcuts panel | Lists the workspaces of the focused output, and runs the fixed actions (close, fullscreen, float, workspaces, focus, move) through `niri msg action`. niri cannot list its key bindings over IPC, so the binding list stays empty. niri has no scratchpad. |
+| Window rules and shortcut | [`dist/niri.kdl`](dist/niri.kdl) floats the Flux windows and binds `Mod+Alt+F` to `flux-cli open`. |
+| Package | Builds `flux-niri`, which replaces `omarchy-flux`. `flux-cli update` prints the commands that rebuild the fork, so it never installs the upstream package over the fork. |
+
+Hyprland and Omarchy keep working as upstream.
+The omarchy-shell plugin stays unused on niri. `flux-cli open` opens the Qt window.
+
+## Install the fork
+
+```sh
+sudo pacman -Syu --needed base-devel git go cmake ninja gpu-screen-recorder
+git clone https://github.com/kraddess/flux-niri.git
+cd flux-niri/dist/arch
+makepkg -si
+sudo systemctl enable --now avahi-daemon
+flux-cli setup
+flux-cli doctor
+```
+
+Paste [`dist/niri.kdl`](dist/niri.kdl) into your niri config, for example `~/.config/niri/config.d/90-user-extra.kdl`.
+A file takes 1 `binds` node, so move the bind into a `binds` node that the file already has.
+Then pair a phone as in [Connect your phone](#connect-your-phone).
+
+## Update the fork
+
+```sh
+git remote add upstream https://github.com/bjarneo/flux.git   # once
+git fetch upstream && git rebase upstream/main
+cd dist/arch && makepkg -si
+```
+
+## License
+
+Upstream Flux has no license yet, so its code keeps all rights with its author.
+The `LICENSE` file of this fork covers only the changes of this fork.
+
+---
+
 Connect your Omarchy desktop to an Android phone, an iPhone, or a Mac over your local network, or through Tailscale when you are away.
 Share files, clipboard text, and clipboard images, read phone notifications, control media, and use your phone as a camera or microphone.
 
