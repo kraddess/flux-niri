@@ -1,13 +1,7 @@
-// Flux window rules and shortcut for niri. Paste them into your niri
+// Flux window rule and shortcut for niri. The Flux window tiles like any
+// app window; only the phone screen mirror floats. Paste them into your niri
 // config, for example ~/.config/niri/config.d/90-user-extra.kdl. A file
 // takes 1 binds node, so put the bind into a binds node that it has.
-
-window-rule {
-    match app-id="^flux$"
-    open-floating true
-    default-column-width { fixed 1180; }
-    default-window-height { fixed 760; }
-}
 
 window-rule {
     match app-id="^flux-screen$"
