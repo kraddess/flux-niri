@@ -12,6 +12,7 @@
 | Phone shortcuts panel | Lists the workspaces of the focused output, and runs the fixed actions (close, fullscreen, float, workspaces, focus, move) through `niri msg action`. niri cannot list its key bindings over IPC, so the binding list stays empty. niri has no scratchpad. |
 | Shortcut | [`dist/niri.kdl`](dist/niri.kdl) binds `Mod+Alt+F` to `flux-cli open`. |
 | Tray icon | The Qt window adds a Flux icon to the system tray. A click opens the window, and the menu has **Open Flux**, **Start Flux**, and **Quit Flux**, which turns `fluxd` off. Closing the window keeps Flux in the tray. `flux-gui --hidden` starts in the tray, and [`dist/niri.kdl`](dist/niri.kdl) runs it at login. |
+| Phone clipboard | The Android app sends a copy from any app, also in the background, after a one-time `adb` grant. See [Background clipboard sync](docs/android.md#background-clipboard-sync). Selected text also has **Send to laptop** in its menu. The upstream app lacks this, so build the fork's app with `make android`. |
 | Package | Builds `flux-niri`, which replaces `omarchy-flux`. `flux-cli update` prints the commands that rebuild the fork, so it never installs the upstream package over the fork. |
 
 Hyprland and Omarchy keep working as upstream.

@@ -104,7 +104,17 @@ object Plugins {
         if (text.isNullOrEmpty() || !core.settings.syncClipboard) return
         if (timestamp != null && timestamp in 1..core.settings.clipboardTimestamp) return
         lastRemoteClip = text
+        ClipWatcher.remoteSetAt = System.currentTimeMillis()
         main.post { Android.setClipboard(core.app, text) }
+    }
+
+    /** Sends text to the computers as their clipboard. It returns false when none is connected. */
+    fun sendText(core: FluxCore, text: String): Boolean {
+        val computers = core.connectedPaired()
+        if (computers.isEmpty()) return false
+        core.settings.clipboardTimestamp = System.currentTimeMillis()
+        computers.forEach { it.send(Packet(Types.CLIPBOARD, bodyOf("content" to text))) }
+        return true
     }
 
     /** Sends the local clipboard. Call it from the main thread while the app has focus. */

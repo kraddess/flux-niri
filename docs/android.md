@@ -88,6 +88,27 @@ The offer needs the [release check](configuration.md#release-check) and a phone 
 Earlier versions of the app do not report it, so update them once with an APK from the release.
 A debug build gets no offer, because a release APK has another signing key and cannot replace it.
 
+## Background clipboard sync
+
+Android 10 and later let only the app on the screen read the clipboard.
+To send a copy that you make in another app, grant Flux two permissions once over `adb`:
+
+```sh
+adb shell pm grant org.omarchy.flux android.permission.READ_LOGS
+adb shell appops set org.omarchy.flux SYSTEM_ALERT_WINDOW allow
+adb shell am force-stop org.omarchy.flux
+```
+
+Then open Flux on the phone.
+On Android 13 and later, the phone asks to allow access to the device logs. Select **Allow**.
+The phone may ask again after a restart of the phone or of Flux.
+
+Flux then watches the system log for the denied clipboard read that a copy causes.
+It opens an invisible window for a moment, reads the clipboard, and sends it.
+Without the permissions, Flux sends a copy only while it is on the screen.
+
+In any app, you can also select text and choose **Send to laptop** in the selection menu.
+
 ## Build and install
 
 Use JDK 21, Android SDK platform 36, and Build Tools 36.0.0.

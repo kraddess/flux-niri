@@ -31,6 +31,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import org.omarchy.flux.core.FluxCore
+import org.omarchy.flux.core.Plugins
 import org.omarchy.flux.core.Ringer
 import org.omarchy.flux.core.Share
 import org.omarchy.flux.service.FluxService
@@ -153,5 +154,40 @@ class ShareActivity : ComponentActivity() {
             (if (Build.VERSION.SDK_INT >= 33) i.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java) else i.getParcelableArrayListExtra(Intent.EXTRA_STREAM))
                 ?: emptyList()
         else -> emptyList()
+    }
+}
+
+/**
+ * An invisible window that ClipWatcher opens after a copy in another app.
+ * Android lets it read the clipboard once it has focus. It sends the
+ * clipboard and closes.
+ */
+class ClipReadActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        FluxCore.init(this)
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (!hasFocus) return
+        Plugins.onLocalClipboard(FluxCore)
+        finish()
+        overridePendingTransition(0, 0)
+    }
+}
+
+/** "Send to laptop" in the text selection menu of any app. */
+class SendTextActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        FluxCore.init(this)
+        FluxService.start(this)
+        val text = intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
+        if (!text.isNullOrEmpty()) {
+            val sent = Plugins.sendText(FluxCore, text)
+            Toast.makeText(this, if (sent) "Sent to the computer" else "Not connected", Toast.LENGTH_SHORT).show()
+        }
+        finish()
     }
 }
