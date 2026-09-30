@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
@@ -226,8 +227,62 @@ func parseHyprMonitors(out []byte) ([]monitor, error) {
 	return ms, nil
 }
 
-// hyprMonitors returns the monitors that wf-recorder can capture.
+// niriOutput is 1 output in the output of niri msg -j outputs. An output
+// that is off has no current mode and no logical size.
+type niriOutput struct {
+	Name  string `json:"name"`
+	Modes []struct {
+		Width  int `json:"width"`
+		Height int `json:"height"`
+	} `json:"modes"`
+	CurrentMode *int `json:"current_mode"`
+	Logical     *struct {
+		Transform string `json:"transform"`
+	} `json:"logical"`
+}
+
+// parseNiriOutputs returns the outputs in the output of niri msg -j
+// outputs that show an image, with their size in pixels as the capture
+// has it. An output rotated by 90 or 270 degrees swaps its width and
+// height.
+func parseNiriOutputs(out []byte) ([]monitor, error) {
+	var outputs map[string]niriOutput
+	if err := json.Unmarshal(out, &outputs); err != nil {
+		return nil, fmt.Errorf("read the niri outputs: %w", err)
+	}
+	var ms []monitor
+	for _, o := range outputs {
+		if o.Name == "" || o.Logical == nil || o.CurrentMode == nil || *o.CurrentMode < 0 || *o.CurrentMode >= len(o.Modes) {
+			continue
+		}
+		m := o.Modes[*o.CurrentMode]
+		w, h := m.Width, m.Height
+		if strings.HasSuffix(o.Logical.Transform, "90") || strings.HasSuffix(o.Logical.Transform, "270") {
+			w, h = h, w
+		}
+		ms = append(ms, monitor{o.Name, w, h})
+	}
+	sort.Slice(ms, func(i, j int) bool { return ms[i].Name < ms[j].Name })
+	return ms, nil
+}
+
+// hyprMonitors returns the monitors that wf-recorder can capture. On niri
+// it reads the niri outputs.
 func hyprMonitors(ctx context.Context) ([]monitor, error) {
+	if onNiri() {
+		out, err := exec.CommandContext(ctx, "niri", "msg", "-j", "outputs").Output()
+		if err != nil {
+			return nil, fmt.Errorf("list the monitors: niri msg outputs: %w", err)
+		}
+		ms, err := parseNiriOutputs(out)
+		if err != nil {
+			return nil, err
+		}
+		if len(ms) == 0 {
+			return nil, errors.New("no output of niri shows an image to capture")
+		}
+		return ms, nil
+	}
 	out, err := hyprctl(ctx, "monitors", "-j")
 	if err != nil {
 		return nil, fmt.Errorf("list the monitors: %w", err)

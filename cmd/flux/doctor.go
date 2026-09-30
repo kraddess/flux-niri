@@ -126,9 +126,15 @@ func doctor() {
 	// start of the stream.
 	gsr, gsrErr := exec.LookPath("gpu-screen-recorder")
 	_, wfErr := exec.LookPath("wf-recorder")
-	check(gsrErr == nil || wfErr == nil, "gpu-screen-recorder is installed, so the phone can show this screen",
-		"The remote desktop needs gpu-screen-recorder. Install it with: sudo pacman -S gpu-screen-recorder")
-	if wfErr == nil {
+	switch {
+	case gsrErr == nil:
+		fmt.Println("✓ gpu-screen-recorder is installed, so the phone can show this screen")
+	case wfErr == nil:
+		fmt.Println("- gpu-screen-recorder is not installed, so the remote desktop encodes on the CPU with wf-recorder. For a smoother stream, run: sudo pacman -S gpu-screen-recorder")
+	default:
+		check(false, "", "The remote desktop needs gpu-screen-recorder. Install it with: sudo pacman -S gpu-screen-recorder")
+	}
+	if wfErr == nil && gsrErr == nil {
 		fmt.Println("✓ wf-recorder is installed, so the remote desktop also works on a GPU that gpu-screen-recorder does not support")
 	}
 	if gsrErr == nil {

@@ -232,3 +232,22 @@ func TestPickRecorder(t *testing.T) {
 		}
 	})
 }
+
+func TestParseNiriOutputs(t *testing.T) {
+	out := `{
+		"eDP-1": {"name": "eDP-1", "modes": [{"width": 1920, "height": 1080}, {"width": 3840, "height": 2160}],
+			"current_mode": 1, "logical": {"transform": "Normal"}},
+		"DP-2": {"name": "DP-2", "modes": [{"width": 2560, "height": 1440}],
+			"current_mode": 0, "logical": {"transform": "270"}},
+		"HDMI-A-1": {"name": "HDMI-A-1", "modes": [{"width": 1920, "height": 1080}],
+			"current_mode": null, "logical": null}
+	}`
+	ms, err := parseNiriOutputs([]byte(out))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []monitor{{"DP-2", 1440, 2560}, {"eDP-1", 3840, 2160}}
+	if len(ms) != len(want) || ms[0] != want[0] || ms[1] != want[1] {
+		t.Errorf("got %v, want %v", ms, want)
+	}
+}
